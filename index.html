@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Se7en — Admin Dashboard</title>
+<title>Admin Dashboard</title>
+<link rel="icon" type="image/png" href="assets/Seven7.png">
+<link rel="apple-touch-icon" href="assets/Seven7.png">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=DM+Mono:ital,wght@0,400;0,500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
@@ -612,9 +614,65 @@ tr:hover td{background:rgba(255,255,255,0.02)}
   transition:opacity 0.18s;
 }
 .wa-card-btn:hover{opacity:0.88}
+
+/* ── Login gate ───────────────────────────────────────────── */
+body.locked .shell,body.locked .toast-wrap,body.locked .wa-banner{display:none}
+.login-gate{
+  position:fixed;inset:0;z-index:1000;
+  display:flex;align-items:center;justify-content:center;padding:20px;
+  background:
+    radial-gradient(circle at top right,rgba(255,255,255,0.06),transparent 30%),
+    radial-gradient(circle at bottom left,rgba(255,255,255,0.04),transparent 28%),
+    var(--bg);
+}
+.login-gate.hide{display:none}
+.login-card{
+  width:380px;max-width:100%;
+  background:linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02));
+  border:1px solid var(--line);border-radius:24px;padding:34px 30px;
+  box-shadow:var(--shadow);backdrop-filter:blur(14px);text-align:center;
+}
+.login-card .login-logo{width:150px;height:auto;display:block;margin:0 auto 6px;object-fit:contain;filter:brightness(1.1)}
+.login-tag{font-size:9px;color:var(--muted);letter-spacing:0.22em;text-transform:uppercase;font-family:var(--mono);margin-bottom:26px}
+.login-field{position:relative;margin-bottom:12px}
+.login-field input{
+  width:100%;background:rgba(255,255,255,0.04);border:1px solid var(--border);
+  border-radius:999px;padding:13px 46px 13px 18px;color:var(--text);font-size:14px;
+  transition:border-color var(--transition),background var(--transition);
+}
+.login-field input:focus{border-color:var(--line);background:rgba(255,255,255,0.06)}
+.login-field.err input{border-color:rgba(224,79,79,0.6)}
+.login-eye{
+  position:absolute;right:6px;top:50%;transform:translateY(-50%);
+  background:none;border:none;color:var(--muted2);font-size:15px;padding:6px 10px;border-radius:999px;
+}
+.login-eye:hover{color:var(--text)}
+.login-btn{
+  width:100%;background:var(--text);color:#000;border:none;border-radius:999px;
+  padding:13px;font-size:13px;font-weight:700;box-shadow:0 10px 30px rgba(255,255,255,0.12);
+  transition:opacity var(--transition),transform var(--transition);
+}
+.login-btn:hover{opacity:0.88;transform:translateY(-1px)}
+.login-btn:disabled{opacity:0.5;cursor:not-allowed;transform:none}
+.login-msg{min-height:18px;margin-top:12px;font-size:11px;color:var(--red)}
+@keyframes login-shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-7px)}40%,80%{transform:translateX(7px)}}
+.login-card.shake{animation:login-shake 0.35s}
 </style>
 </head>
-<body>
+<body class="locked">
+<div class="login-gate" id="login-gate">
+  <div class="login-card" id="login-card">
+    <img src="assets/Seven7.png" alt="SE7EN" class="login-logo" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+    <div style="display:none;font-size:22px;font-weight:900;letter-spacing:0.18em;margin-bottom:6px">Se7en</div>
+    <div class="login-tag">Admin Dashboard</div>
+    <div class="login-field" id="login-field">
+      <input type="password" id="login-pass" placeholder="Password" autocomplete="current-password" autofocus>
+      <button type="button" class="login-eye" id="login-eye" aria-label="Show password">👁</button>
+    </div>
+    <button type="button" class="login-btn" id="login-btn">Unlock</button>
+    <div class="login-msg" id="login-msg"></div>
+  </div>
+</div>
 <h2 class="sr-only">Se7en admin dashboard</h2>
 
 <div class="shell">
@@ -656,6 +714,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
       </span>
       <span style="font-size:11px;color:var(--muted);font-family:var(--mono)" id="date-disp"></span>
       <button class="tb-btn" id="btn-export">⬇ Export</button>
+      <button class="tb-btn" id="btn-logout" title="Lock dashboard">🔒 Logout</button>
       <button class="tb-btn primary" id="btn-new-order">＋ New Order</button>
     </div>
   </div>
@@ -899,6 +958,68 @@ tr:hover td{background:rgba(255,255,255,0.02)}
 <div class="wa-banner" id="wa-banner"></div>
 <div class="toast-wrap" id="toast-wrap"></div>
 
+<script>
+// ── Login gate ─────────────────────────────────────────────
+// Stores only a SHA-256 hash of the password (not the plain text).
+(function () {
+  const PASS_HASH = 'd4e9b942c8639948b1cb40a00c55be32aec98d11b669874e210bac8ecfe573a9';
+  const KEY = 'se7en_admin_auth';
+  const gate = document.getElementById('login-gate');
+  const card = document.getElementById('login-card');
+  const field = document.getElementById('login-field');
+  const input = document.getElementById('login-pass');
+  const btn = document.getElementById('login-btn');
+  const msg = document.getElementById('login-msg');
+  let fails = 0, resolveUnlock;
+  window.__seUnlocked = new Promise(r => resolveUnlock = r);
+
+  function unlock() {
+    document.body.classList.remove('locked');
+    gate.classList.add('hide');
+    input.value = '';
+    resolveUnlock();
+  }
+
+  async function sha256(text) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  async function attempt() {
+    const val = input.value;
+    if (!val) { msg.textContent = 'Enter the password.'; return; }
+    if (!(window.crypto && crypto.subtle)) { msg.textContent = 'Open this page over HTTPS to log in.'; return; }
+    btn.disabled = true;
+    const ok = (await sha256(val)) === PASS_HASH;
+    if (ok) {
+      sessionStorage.setItem(KEY, '1');
+      unlock();
+    } else {
+      fails++;
+      field.classList.add('err');
+      card.classList.remove('shake'); void card.offsetWidth; card.classList.add('shake');
+      msg.textContent = 'Wrong password.';
+      input.select();
+      // small delay after repeated failures
+      await new Promise(r => setTimeout(r, Math.min(fails, 5) * 600));
+    }
+    btn.disabled = false;
+  }
+
+  btn.addEventListener('click', attempt);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') attempt(); });
+  input.addEventListener('input', () => { field.classList.remove('err'); msg.textContent = ''; });
+  document.getElementById('login-eye').addEventListener('click', () => {
+    input.type = input.type === 'password' ? 'text' : 'password';
+  });
+  document.getElementById('btn-logout').addEventListener('click', () => {
+    sessionStorage.removeItem(KEY);
+    location.reload();
+  });
+
+  if (sessionStorage.getItem(KEY) === '1') unlock(); else input.focus();
+})();
+</script>
 <!-- ── Firebase SDK ───────────────────────────────────────── -->
 <script type="module">
 import { initializeApp }                            from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
@@ -1951,12 +2072,12 @@ document.addEventListener('keydown', e => {
 document.getElementById('date-disp').textContent =
   new Date().toLocaleDateString('en-GB',{ weekday:'short', day:'numeric', month:'short', year:'numeric' });
 
-if (Notification.permission === 'default') Notification.requestPermission();
-
-loadProds();
-fallbackToLocal();
-initFirebase();
-loadWaSettings();
+window.__seUnlocked.then(() => {
+  loadProds();
+  fallbackToLocal();
+  initFirebase();
+  loadWaSettings();
+});
 </script>
 </body>
 </html>
