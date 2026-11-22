@@ -829,12 +829,13 @@ tr:hover td{background:rgba(255,255,255,0.02)}
       <button class="btn-ghost" style="width:100%;margin-top:6px;font-size:11px;padding:8px" id="btn-add-item-row">＋ Add item</button>
     </div>
     <div class="fgrow">
+      <div class="fg"><label>Promo code (optional)</label><input id="o-promo" placeholder="SEV10" style="text-transform:uppercase"></div>
       <div class="fg"><label>Discount (L.E)</label><input id="o-discount" type="number" min="0" value="0" placeholder="0"></div>
-      <div class="fg"><label>Status</label>
-        <select id="o-status">
-          <option>New</option><option>Processing</option><option>Shipped</option><option>Delivered</option><option>Cancelled</option>
-        </select>
-      </div>
+    </div>
+    <div class="fg"><label>Status</label>
+      <select id="o-status">
+        <option>New</option><option>Processing</option><option>Shipped</option><option>Delivered</option><option>Cancelled</option>
+      </select>
     </div>
     <div class="fg"><label>Notes</label><input id="o-notes" placeholder="Special requests…"></div>
     <div class="modal-ft">
@@ -918,6 +919,10 @@ const LS_ORDERS = 'se7en_orders_v2';
 const LS_PRODS  = 'se7en_products_v4';
 const LS_PRODS_OLD = ['se7en_products_v3', 'se7en_products_v2'];
 const PER       = 10;
+const FREE_SHIP_MIN = 1500;   // free shipping from this subtotal (after discount)
+const SHIP_COST     = 65;
+// Promo codes used on the storefront checkout (checkout.html)
+const PROMO_CODES = { 'SEV10': 10, 'ZA777': 15, '20777': 20 };
 
 let state = { orders: [], prods: [], firestoreReady: false };
 let db, ordersCol;
@@ -1062,7 +1067,7 @@ Items:
 ${itemsList}
 
 Pricing:
-Subtotal: ${(order.subtotal || 0).toLocaleString()} L.E${order.discountAmt ? '\nDiscount: −' + (order.discountAmt).toLocaleString() + ' L.E' : ''}
+Subtotal: ${(order.subtotal || 0).toLocaleString()} L.E${order.discountAmt ? '\nDiscount' + (order.discountCode ? ' (' + order.discountCode + (order.discountPct ? ' · ' + order.discountPct + '%' : '') + ')' : '') + ': −' + (order.discountAmt).toLocaleString() + ' L.E' : ''}
 Shipping: ${order.shipping === 0 ? 'Free' : (order.shipping || 65).toLocaleString() + ' L.E'}
 Total: ${(order.total || 0).toLocaleString()} L.E
 
@@ -1261,7 +1266,7 @@ function renderOrders() {
       <td><span class="link-id" data-detail="${o.id}">${o.id}</span></td>
       <td style="overflow:hidden;text-overflow:ellipsis">${o.firstName} ${o.lastName}<br><span style="font-size:10px;color:var(--muted)">${o.email||''}</span></td>
       <td style="overflow:hidden;text-overflow:ellipsis;color:var(--muted2)">${(o.items||[]).map(i=>i.productName+(i.color?' / '+i.color:'')).join(', ')}</td>
-      <td class="mono">${(o.total||0).toLocaleString()} L.E</td>
+      <td class="mono">${(o.total||0).toLocaleString()} L.E${o.discountCode ? '<br><span style="font-size:9px;color:var(--green)">'+o.discountCode+'</span>' : ''}</td>
       <td><select class="status-sel" data-updid="${o.id}">${STATUSES.map(s=>`<option ${s===o.status?'selected':''}>${s}</option>`).join('')}</select></td>
       <td style="color:var(--muted2)">${fmt(o.createdAt)}</td>
       <td><div style="display:flex;gap:5px">
@@ -1303,7 +1308,7 @@ function renderProds() {
       <div class="pcat">${p.category}${p.subcategory ? ` · ${p.subcategory}` : ''}</div>
     </div>
     <div class="pprice">${priceLabel(p)}</div>
-    <span class="pstock ${(p.stock||0) > 8 ? 'ps-ok' : 'ps-low'}">${p.stock||0} in stock</span>
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="pstock ${(p.stock||0) > 8 ? 'ps-ok' : 'ps-low'}">${p.stock||0} in stock</span>${p.category==='T-Shirt' ? '<span class="pstock" style="background:rgba(255,255,255,0.07);color:var(--muted2)">Hidden on store</span>' : ''}</div>
     <div class="pbtns">
       <button class="pbtn" data-editprod="${p.id}">✏ Edit</button>
       <button class="pbtn" style="flex:0;padding:7px 13px" data-delprod="${p.id}">🗑</button>
@@ -1465,7 +1470,7 @@ function openDetail(id) {
       ${(o.items||[]).map(it => `<div class="item-line"><span>${it.productName} <span style="color:var(--muted);font-size:10px">${it.color ? '/ '+it.color : ''} / ${it.size||''}</span></span><span class="mono">${(it.price||0).toLocaleString()} L.E</span></div>`).join('')}
       <div class="total-blk">
         <div class="tot-row"><span>Subtotal</span><span class="mono">${(o.subtotal||0).toLocaleString()} L.E</span></div>
-        ${o.discountAmt ? `<div class="tot-row"><span>Discount</span><span class="mono" style="color:var(--green)">−${o.discountAmt.toLocaleString()} L.E</span></div>` : ''}
+        ${o.discountAmt ? `<div class="tot-row"><span>Discount${o.discountCode ? ' <span class="src-badge src-admin" style="margin-left:4px">'+o.discountCode+(o.discountPct ? ' · '+o.discountPct+'%' : '')+'</span>' : ''}</span><span class="mono" style="color:var(--green)">−${o.discountAmt.toLocaleString()} L.E</span></div>` : ''}
         <div class="tot-row"><span>Shipping</span><span class="mono">${o.shipping===0?'Free':(o.shipping||65).toLocaleString()+' L.E'}</span></div>
         <div class="tot-row grand"><span>Total</span><span class="mono">${(o.total||0).toLocaleString()} L.E</span></div>
       </div>
@@ -1548,6 +1553,7 @@ function openNewOrder() {
   document.getElementById('o-ctry').value     = 'Egypt';
   document.getElementById('o-status').value   = 'New';
   document.getElementById('o-discount').value = '0';
+  document.getElementById('o-promo').value    = '';
   document.getElementById('item-adder').innerHTML = '';
   addItemRow();
   openModal('order-modal');
@@ -1568,6 +1574,7 @@ function openEditOrder(id) {
   document.getElementById('o-notes').value = o.notes     || '';
   document.getElementById('o-status').value = o.status   || 'New';
   document.getElementById('o-discount').value = o.discountAmt || 0;
+  document.getElementById('o-promo').value    = o.discountCode || '';
   document.getElementById('item-adder').innerHTML = '';
   (o.items || []).forEach(it => addItemRow(it));
   openModal('order-modal');
@@ -1576,10 +1583,12 @@ function openEditOrder(id) {
 async function saveOrder() {
   const items      = collectItems();
   const sub        = items.reduce((a, b) => a + b.price * b.quantity, 0);
-  const ship       = sub >= 1500 ? 0 : 65;
   const discountAmt = Math.max(0, parseFloat(document.getElementById('o-discount').value) || 0);
+  const ship       = (sub - discountAmt) >= FREE_SHIP_MIN ? 0 : SHIP_COST;
   const total      = Math.max(0, sub - discountAmt + ship);
   const orig       = editOrderId ? state.orders.find(x => x.id === editOrderId) : null;
+  const promoRaw   = (document.getElementById('o-promo')?.value || '').trim().toUpperCase();
+  const promoPct   = PROMO_CODES[promoRaw] || 0;
   const o = {
     id:          editOrderId || uid(),
     firstName:   document.getElementById('o-fn').value.trim()   || 'Unknown',
@@ -1592,6 +1601,8 @@ async function saveOrder() {
     notes:       document.getElementById('o-notes').value.trim(),
     status:      document.getElementById('o-status').value,
     source:      orig?.source || 'admin',
+    discountCode: promoPct ? promoRaw : '',
+    discountPct:  promoPct,
     items, subtotal: sub, discountAmt, shipping: ship, total,
     createdAt: orig ? orig.createdAt : Date.now()
   };
@@ -1725,11 +1736,11 @@ function delProd(id) {
 }
 
 function exportCSV() {
-  const rows = [['Order ID','First Name','Last Name','Email','Phone','City','Country','Source','Items','Subtotal','Discount','Shipping','Total','Status','Date']];
+  const rows = [['Order ID','First Name','Last Name','Email','Phone','City','Country','Source','Items','Subtotal','Promo Code','Discount','Shipping','Total','Status','Date']];
   state.orders.forEach(o => rows.push([
     o.id, o.firstName, o.lastName, o.email||'', o.phone||'', o.city||'', o.country||'', o.source||'admin',
     (o.items||[]).map(i => i.productName + (i.color?' / '+i.color:'') + ' x' + i.quantity).join(';'),
-    o.subtotal||0, o.discountAmt||0, o.shipping||0, o.total||0, o.status, fmt(o.createdAt)
+    o.subtotal||0, o.discountCode||'', o.discountAmt||0, o.shipping||0, o.total||0, o.status, fmt(o.createdAt)
   ]));
   const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g,'""') + '"').join(',')).join('\n');
   const a   = document.createElement('a');
@@ -1785,7 +1796,7 @@ async function seedDemo() {
       return { productId:pid, productName:p.name, price:p.price, size:'M', quantity:1 };
     });
     const sub  = items.reduce((a, b) => a + b.price * b.quantity, 0);
-    const ship = sub >= 1500 ? 0 : 65;
+    const ship = sub >= FREE_SHIP_MIN ? 0 : SHIP_COST;
     const o = {
       id: uid(), firstName:n[0], lastName:n[1], email:n[2], phone:n[3],
       city:n[4], country:'Egypt', address:'123 Sample St',
@@ -1885,6 +1896,16 @@ document.addEventListener('change', async e => {
 });
 
 document.addEventListener('input', e => {
+  if (e.target.id === 'o-promo') {
+    const code = e.target.value.trim().toUpperCase();
+    const pct  = PROMO_CODES[code];
+    if (pct) {
+      const sub = collectItems().reduce((a, b) => a + b.price * b.quantity, 0);
+      document.getElementById('o-discount').value = Math.round(sub * pct / 100);
+      toast(`Code ${code} — ${pct}% off applied`, 'ok');
+    }
+    return;
+  }
   if (e.target.id === 'ord-search')  { renderOrders(); return; }
   if (e.target.id === 'cust-search') { renderCustomers(); return; }
 });
